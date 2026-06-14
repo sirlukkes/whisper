@@ -22,6 +22,7 @@ if [ ! -f "$BUILD_DIR/.built_ok" ]; then
   echo "⚙️  Configuring + building whisper.cpp static libs (this is slow the first time)..."
   cmake -B "$BUILD_DIR" -S "$VENDOR_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
     -DBUILD_SHARED_LIBS=OFF \
     -DGGML_METAL=OFF \
     -DGGML_ACCELERATE=ON \

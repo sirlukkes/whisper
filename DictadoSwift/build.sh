@@ -13,6 +13,13 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$MACOS_DIR"
 mkdir -p "$RESOURCES_DIR"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "🧱 Building whisper.cpp static libs..."
+"$SCRIPT_DIR/scripts/build_whisper_lib.sh"
+VENDOR="$SCRIPT_DIR/vendor/whisper.cpp"
+WLIBS=$(find "$VENDOR/build" -name "*.a")
+
 echo "⚙️ Compilando archivos Swift..."
 # Obtener SDK de macOS
 SDK_PATH=$(xcrun --show-sdk-path)
@@ -28,12 +35,19 @@ swiftc -o "$MACOS_DIR/DictadoWhisper" \
     -sdk "$SDK_PATH" \
     -target "${ARCH}-apple-macosx13.0" \
     -O \
+    -import-objc-header "$SCRIPT_DIR/whisper-bridging.h" \
+    -I "$VENDOR/include" -I "$VENDOR/ggml/include" \
+    -framework Accelerate -framework AVFoundation -lc++ \
     DictadoWhisperApp.swift \
     ContentView.swift \
     SpeechManager.swift \
     HotkeyManager.swift \
     SettingsManager.swift \
-    HistoryManager.swift
+    HistoryManager.swift \
+    WhisperEngine.swift \
+    AudioRecorder.swift \
+    ModelManager.swift \
+    $WLIBS
 
 echo "📄 Copiando Info.plist..."
 cp Info.plist "$APP_BUNDLE/Contents/Info.plist"

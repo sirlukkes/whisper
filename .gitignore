@@ -2,6 +2,7 @@
 DictadoSwift/build/
 DictadoSwift/vendor/
 DictadoSwift/tests/*.bin
+DictadoSwift/tests/_bin/
 **/__pycache__/
 *.pyc
 # Whisper models (downloaded at runtime)

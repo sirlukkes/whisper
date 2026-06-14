@@ -42,4 +42,7 @@ run_test() {
 TEST_ARGS=("$MODEL" "$VENDOR/samples/jfk.wav")
 run_test test_engine "$DS_DIR/WhisperEngine.swift" "$SCRIPT_DIR/test_engine.swift"
 
+TEST_ARGS=()
+run_test test_audio "$DS_DIR/AudioRecorder.swift" "$SCRIPT_DIR/test_audio.swift"
+
 exit $FAILED

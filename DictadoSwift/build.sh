@@ -68,6 +68,10 @@ else
 fi
 
 echo "🔏 Firmando la aplicación localmente (ad-hoc)..."
+# Strip extended attributes (resource forks / Finder info / quarantine) from the bundle.
+# Without this, codesign fails on stricter Macs with:
+#   "resource fork, Finder information, or similar detritus not allowed"
+xattr -cr "$APP_BUNDLE"
 codesign --force --deep --sign - "$APP_BUNDLE"
 
 echo "🚀 Instalando la aplicación en /Applications..."

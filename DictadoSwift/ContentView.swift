@@ -5,6 +5,7 @@ struct ContentView: View {
     @ObservedObject var speechManager: SpeechManager
     @StateObject private var settings = SettingsManager.shared
     @ObservedObject private var historyManager = HistoryManager.shared
+    @ObservedObject private var models = ModelManager.shared
     
     // Pestaña activa (0 = Dictar, 1 = Historial)
     @State private var activeTab = 0
@@ -85,6 +86,7 @@ struct ContentView: View {
         .preferredColorScheme(settings.theme == "system" ? nil : (settings.theme == "dark" ? .dark : .light))
         .onAppear {
             speechManager.checkAccessibilityPermissions()
+            if settings.engine == "whisper" { models.ensureDownloaded(settings.whisperModel) }
         }
         .onDisappear {
             stopShortcutListening()
@@ -167,25 +169,27 @@ struct ContentView: View {
             // Tarjeta de Ajustes
             ScrollView {
                 VStack(spacing: 8) {
-                    // 1. Selector de Idioma
-                    HStack {
-                        Text("Idioma:")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(textColor)
-                        Spacer()
-                        Picker("", selection: $settings.language) {
-                            ForEach(languages, id: \.1) { name, code in
-                                Text(name).tag(code)
+                    // 1. Selector de Idioma (solo para Apple; Whisper detecta idioma automáticamente)
+                    if settings.engine == "apple" {
+                        HStack {
+                            Text("Idioma:")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(textColor)
+                            Spacer()
+                            Picker("", selection: $settings.language) {
+                                ForEach(languages, id: \.1) { name, code in
+                                    Text(name).tag(code)
+                                }
                             }
+                            .pickerStyle(MenuPickerStyle())
+                            .frame(width: 195)
+                            .labelsHidden()
                         }
-                        .pickerStyle(MenuPickerStyle())
-                        .frame(width: 195)
-                        .labelsHidden()
+
+                        Divider()
+                            .background(surfaceColor.opacity(0.3))
                     }
-                    
-                    Divider()
-                        .background(surfaceColor.opacity(0.3))
-                    
+
                     // 2. Selector de Motor/Motor
                     HStack {
                         Text("Motor:")
@@ -193,36 +197,27 @@ struct ContentView: View {
                             .foregroundColor(textColor)
                         Spacer()
                         Picker("", selection: $settings.engine) {
+                            Text("Whisper Local").tag("whisper")
                             Text("Apple Local").tag("apple")
-                            Text("Whisper Local (Python)").tag("whisper_python")
                         }
                         .pickerStyle(MenuPickerStyle())
                         .frame(width: 195)
                         .labelsHidden()
                     }
                     
-                    // 2b. Selector de Modelo Whisper (Solo si el motor es Python)
-                    if settings.engine == "whisper_python" {
-                        Divider()
-                            .background(surfaceColor.opacity(0.3))
+                    // 2b. Selector de Modelo Whisper (Solo si el motor es whisper)
+                    if settings.engine == "whisper" {
+                        Divider().background(surfaceColor.opacity(0.3))
                         HStack {
-                            Text("Modelo Whisper:")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(textColor)
+                            Text("Modelo:").font(.system(size: 14, weight: .bold)).foregroundColor(textColor)
                             Spacer()
                             Picker("", selection: $settings.whisperModel) {
-                                Text("Tiny (74M - Rápido)").tag("tiny")
-                                Text("Base (141M - Equilibrado)").tag("base")
-                                Text("Small (461M - Preciso)").tag("small")
-                                Text("Medium (1.5G - Muy Preciso)").tag("medium")
-                                Text("Large v2 (3.0G - Profesional)").tag("large-v2")
-                                Text("Large v3 (3.0G - Máx. Precisión)").tag("large-v3")
-                                Text("Turbo (1.6G - Rápido/Prec.)").tag("turbo")
+                                ForEach(ModelManager.catalog) { m in Text(m.displayName).tag(m.id) }
                             }
-                            .pickerStyle(MenuPickerStyle())
-                            .frame(width: 195)
-                            .labelsHidden()
+                            .pickerStyle(MenuPickerStyle()).frame(width: 195).labelsHidden()
+                            .onChange(of: settings.whisperModel) { newId in models.ensureDownloaded(newId) }
                         }
+                        whisperModelStatusRow
                     }
                     
                     Divider()
@@ -479,6 +474,31 @@ struct ContentView: View {
         }
     }
     
+    // Model download status row for the Whisper engine section
+    @ViewBuilder private var whisperModelStatusRow: some View {
+        let state = models.states[settings.whisperModel] ?? (models.isReady(settings.whisperModel) ? .ready : .notDownloaded)
+        switch state {
+        case .ready:
+            Label("Modelo listo", systemImage: "checkmark.circle.fill")
+                .font(.system(size: 11)).foregroundColor(greenColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .downloading(let fraction, let detail):
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Descargando modelo… \(detail)").font(.system(size: 11)).foregroundColor(yellowColor)
+                ProgressView(value: fraction).tint(lavenderColor)
+            }
+        case .notDownloaded:
+            Button("Descargar modelo") { models.ensureDownloaded(settings.whisperModel) }
+                .font(.system(size: 11, weight: .bold)).foregroundColor(lavenderColor)
+        case .failed(let msg):
+            VStack(alignment: .leading, spacing: 3) {
+                Text("❌ \(msg)").font(.system(size: 11)).foregroundColor(redColor)
+                Button("Reintentar") { models.ensureDownloaded(settings.whisperModel) }
+                    .font(.system(size: 11, weight: .bold)).foregroundColor(lavenderColor)
+            }
+        }
+    }
+
     // Funciones del monitor de atajo dinámico
     private func startShortcutListening() {
         isListeningForShortcut = true

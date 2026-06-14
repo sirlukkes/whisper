@@ -71,7 +71,8 @@ echo "🔏 Firmando la aplicación localmente (ad-hoc)..."
 codesign --force --deep --sign - "$APP_BUNDLE"
 
 echo "🚀 Instalando la aplicación en /Applications..."
-killall "Dictado Whisper" 2>/dev/null || true
+# The executable is "DictadoWhisper" (no space); kill by that name + the display name to be safe.
+killall DictadoWhisper "Dictado Whisper" 2>/dev/null || true
 rm -rf "/Applications/Dictado Whisper.app"
 cp -R "$APP_BUNDLE" "/Applications/"
 

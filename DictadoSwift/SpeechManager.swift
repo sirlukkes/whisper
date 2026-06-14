@@ -29,6 +29,9 @@ class SpeechManager: NSObject, ObservableObject {
     private let audioRecorder = AudioRecorder()
     private var whisperEngine: WhisperEngine?
     private var loadedModelId: String?
+    // Serial queue: serializes transcriptions and removes the data race on
+    // whisperEngine/loadedModelId (also avoids two transcriptions fighting for CPU).
+    private let whisperQueue = DispatchQueue(label: "com.lukkes.dictadowhisper.transcribe")
 
     // Guard so the Apple transcription finishes exactly once per round (isFinal or 3s safety net)
     private var finishedThisRound = false
@@ -173,7 +176,7 @@ class SpeechManager: NSObject, ObservableObject {
         DispatchQueue.main.async {
             if let d = NSApplication.shared.delegate as? AppDelegate { d.closePopover(nil) }
         }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        whisperQueue.async { [weak self] in
             guard let self else { return }
             let modelId = SettingsManager.shared.whisperModel
             if self.whisperEngine == nil || self.loadedModelId != modelId {

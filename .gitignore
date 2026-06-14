@@ -1,0 +1,9 @@
+# Build artifacts
+DictadoSwift/build/
+DictadoSwift/vendor/
+DictadoSwift/tests/*.bin
+**/__pycache__/
+*.pyc
+# Whisper models (downloaded at runtime)
+*.bin
+.DS_Store

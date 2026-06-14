@@ -6,7 +6,6 @@ class SettingsManager: ObservableObject {
     @Published var language: String {
         didSet {
             UserDefaults.standard.set(language, forKey: "language")
-            saveToPythonConfig()
             NotificationCenter.default.post(name: .whisperSettingsChanged, object: nil)
         }
     }
@@ -14,7 +13,6 @@ class SettingsManager: ObservableObject {
     @Published var playSounds: Bool {
         didSet {
             UserDefaults.standard.set(playSounds, forKey: "playSounds")
-            saveToPythonConfig()
             NotificationCenter.default.post(name: .whisperSettingsChanged, object: nil)
         }
     }
@@ -50,7 +48,6 @@ class SettingsManager: ObservableObject {
     @Published var whisperModel: String {
         didSet {
             UserDefaults.standard.set(whisperModel, forKey: "whisperModel")
-            saveToPythonConfig()
             NotificationCenter.default.post(name: .whisperSettingsChanged, object: nil)
         }
     }
@@ -61,9 +58,9 @@ class SettingsManager: ObservableObject {
         self.playSounds = UserDefaults.standard.object(forKey: "playSounds") as? Bool ?? true
         
         self.theme = UserDefaults.standard.string(forKey: "theme") ?? "system"
-        self.engine = UserDefaults.standard.string(forKey: "engine") ?? "apple"
-        self.whisperModel = UserDefaults.standard.string(forKey: "whisperModel") ?? "tiny"
-        
+        self.engine = UserDefaults.standard.string(forKey: "engine") ?? "whisper"
+        self.whisperModel = UserDefaults.standard.string(forKey: "whisperModel") ?? "base"
+
         // Keycode 15 is virtual key code for 'R'
         // Modifiers 6144 is controlKey (4096) + optionKey (2048)
         if UserDefaults.standard.object(forKey: "hotkeyCode") == nil {
@@ -73,38 +70,10 @@ class SettingsManager: ObservableObject {
             self.hotkeyCode = UserDefaults.standard.integer(forKey: "hotkeyCode")
             self.hotkeyModifiers = UserDefaults.standard.integer(forKey: "hotkeyModifiers")
         }
-        
-        // Sincronizar en el arranque
-        saveToPythonConfig()
-    }
-    
-    func saveToPythonConfig() {
-        let fileManager = FileManager.default
-        let homeDir = fileManager.homeDirectoryForCurrentUser
-        let configFileURL = homeDir.appendingPathComponent(".dictado_whisper_config.json")
-        
-        var config: [String: Any] = [:]
-        
-        if fileManager.fileExists(atPath: configFileURL.path) {
-            if let data = try? Data(contentsOf: configFileURL),
-               let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                config = json
-            }
-        }
-        
-        let swiftLang = self.language
-        let pyLang = String(swiftLang.prefix(2))
-        
-        config["model_size"] = self.whisperModel
-        config["language"] = pyLang
-        config["play_sounds"] = self.playSounds
-        
-        do {
-            let data = try JSONSerialization.data(withJSONObject: config, options: .prettyPrinted)
-            try data.write(to: configFileURL)
-            print("Configuración de Python sincronizada en: \(configFileURL.path)")
-        } catch {
-            print("Error al guardar la configuración de Python: \(error.localizedDescription)")
+
+        // Migrate the removed Python engine to native Whisper.
+        if self.engine == "whisper_python" {
+            self.engine = "whisper"
         }
     }
     

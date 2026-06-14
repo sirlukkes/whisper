@@ -18,13 +18,20 @@ class SpeechManager: NSObject, ObservableObject {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var speechRecognizer: SFSpeechRecognizer?
-    
+
     private var isAuthorized = false
-    
+
     // Guardar referencia a la app que tenía foco antes de grabar, para restaurarla al pegar
     private var previousApp: NSRunningApplication?
     private var lastActiveApp: NSRunningApplication?
-    private var pythonProcess: Process?
+
+    // Whisper (in-process) engine
+    private let audioRecorder = AudioRecorder()
+    private var whisperEngine: WhisperEngine?
+    private var loadedModelId: String?
+
+    // Guard so the Apple transcription finishes exactly once per round (isFinal or 3s safety net)
+    private var finishedThisRound = false
     
     override init() {
         super.init()
@@ -37,21 +44,16 @@ class SpeechManager: NSObject, ObservableObject {
         // Observar cambios de aplicación activa para guardar cuál era la aplicación de edición real del usuario
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(workspaceDidActivateApplication(_:)), name: NSWorkspace.didActivateApplicationNotification, object: nil)
         
-        // Observar cambios de configuración de Whisper (para reiniciar o detener el proceso de Python)
+        // Observar cambios de configuración (ej. cambio de idioma para el reconocedor de Apple)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSettingsChanged), name: .whisperSettingsChanged, object: nil)
-        
+
         // Inicializar con la aplicación actualmente activa
         if let active = NSWorkspace.shared.frontmostApplication, active.bundleIdentifier != NSRunningApplication.current.bundleIdentifier {
             self.lastActiveApp = active
         }
-        
+
         // Solicitar permisos al iniciar
         requestPermissions()
-        
-        // Si al iniciar el motor seleccionado es Python, lanzar la aplicación de Python de fondo
-        if SettingsManager.shared.engine == "whisper_python" {
-            launchPythonApp()
-        }
     }
     
     @objc private func workspaceDidActivateApplication(_ notification: Notification) {
@@ -64,35 +66,11 @@ class SpeechManager: NSObject, ObservableObject {
     }
     
     @objc private func handleSettingsChanged() {
-        DispatchQueue.main.async {
-            if SettingsManager.shared.engine == "whisper_python" {
-                // Reiniciar el proceso de Python para que cargue la nueva configuración (ej. cambio de modelo/idioma)
-                self.restartPythonProcess()
-            } else {
-                // Si cambiaron a Apple Local, matamos el proceso de Python para liberar recursos de la GPU/CPU/RAM
-                self.terminatePythonProcess()
-            }
-        }
+        // The Whisper engine reloads its model lazily on stop when the model id changes,
+        // and the Apple flow re-creates the recognizer at the start of each recording,
+        // so there is nothing to do here on a live settings change.
     }
-    
-    func restartPythonProcess() {
-        terminatePythonProcess()
-        // Esperar un momento a que se libere el proceso anterior y luego lanzar de nuevo
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if SettingsManager.shared.engine == "whisper_python" {
-                self.launchPythonApp()
-            }
-        }
-    }
-    
-    func terminatePythonProcess() {
-        if let process = pythonProcess, process.isRunning {
-            process.terminate()
-            print("[Python] Proceso de Python terminado.")
-        }
-        pythonProcess = nil
-    }
-    
+
     func checkAccessibilityPermissions() {
         DispatchQueue.main.async {
             self.isAccessibilityAuthorized = AXIsProcessTrusted()
@@ -148,8 +126,17 @@ class SpeechManager: NSObject, ObservableObject {
     
     func startRecording() {
         guard !isRecording else { return }
-        
-        // Guardar la app activa ANTES de cualquier acción para poder restaurar el foco después
+        capturePreviousApp()
+
+        if SettingsManager.shared.engine == "whisper" {
+            startWhisperRecording()
+            return
+        }
+        startAppleRecording()
+    }
+
+    /// Save the app that had focus BEFORE recording so we can restore it when pasting.
+    private func capturePreviousApp() {
         if let lastApp = self.lastActiveApp {
             self.previousApp = lastApp
         } else if let currentFront = NSWorkspace.shared.frontmostApplication, currentFront.bundleIdentifier != NSRunningApplication.current.bundleIdentifier {
@@ -158,72 +145,128 @@ class SpeechManager: NSObject, ObservableObject {
             self.previousApp = nil
         }
         print("[Focus] startRecording - previousApp fijada como: \(self.previousApp?.localizedName ?? "ninguna")")
-        
-        // Si el motor seleccionado es Python, lanzar la aplicación de Python original
-        if SettingsManager.shared.engine == "whisper_python" {
-            launchPythonApp()
+    }
+
+    // MARK: - Whisper (in-process) engine
+
+    private func startWhisperRecording() {
+        let modelId = SettingsManager.shared.whisperModel
+        guard ModelManager.shared.isReady(modelId) else {
+            updateStatus("⬇️ Descarga el modelo primero (ajustes)", play: "Basso")
+            ModelManager.shared.ensureDownloaded(modelId)
             return
         }
-        
+        do {
+            try audioRecorder.start()
+            isRecording = true
+            currentTranscription = ""
+            updateStatus("🎤 Grabando...", play: "Tink")
+        } catch {
+            updateStatus("❌ Error de micrófono", play: "Basso")
+        }
+    }
+
+    private func stopWhisperRecording() {
+        isRecording = false
+        updateStatus("⌛ Transcribiendo...", play: "Ping")
+        let samples = audioRecorder.stop()
+        DispatchQueue.main.async {
+            if let d = NSApplication.shared.delegate as? AppDelegate { d.closePopover(nil) }
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let modelId = SettingsManager.shared.whisperModel
+            if self.whisperEngine == nil || self.loadedModelId != modelId {
+                self.whisperEngine = WhisperEngine(modelPath: ModelManager.shared.localPath(for: modelId).path)
+                self.loadedModelId = modelId
+            }
+            let text = self.whisperEngine?.transcribe(samples: samples, language: "auto")?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            DispatchQueue.main.async {
+                if text.isEmpty {
+                    self.updateStatus("⚠️ No se detectó voz", play: "Pop")
+                } else {
+                    self.currentTranscription = text
+                    self.updateStatus("✍️ Transcrito: \"\(text.prefix(30))...\"", play: "Glass")
+                    self.copyAndPasteText(text)
+                    HistoryManager.shared.addEntry(text: text)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    if !self.isRecording { self.statusText = "Listo" }
+                }
+            }
+        }
+    }
+
+    // MARK: - Apple (SFSpeechRecognizer) engine
+
+    private func startAppleRecording() {
+        finishedThisRound = false
+
         // Actualizar el reconocedor si cambió el idioma
         setupRecognizer()
-        
+
         guard let recognizer = speechRecognizer, recognizer.isAvailable else {
             updateStatus("❌ Motor de voz no disponible", play: "Basso")
             return
         }
-        
+        // El dictado de Apple solo es privado/offline si el idioma soporta reconocimiento local.
+        if !recognizer.supportsOnDeviceRecognition {
+            updateStatus("⚠️ Este idioma no soporta dictado local de Apple. Usa Whisper.", play: "Basso")
+            return
+        }
+
         // Detener cualquier tarea anterior
         if recognitionTask != nil {
             recognitionTask?.cancel()
             recognitionTask = nil
         }
 
-        
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest = recognitionRequest else { return }
-        
+
         // Forzar reconocimiento local (offline, privado, sin servidor Apple)
         recognitionRequest.requiresOnDeviceRecognition = true
         recognitionRequest.shouldReportPartialResults = true
-        
+
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        
+
         // Limpiar taps previos por seguridad
         inputNode.removeTap(onBus: 0)
-        
+
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
             self.recognitionRequest?.append(buffer)
         }
-        
+
         audioEngine.prepare()
-        
+
         do {
             try audioEngine.start()
             isRecording = true
             currentTranscription = ""
             updateStatus("🎤 Grabando...", play: "Tink")
-            
+
             recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { result, error in
                 var isFinal = false
-                
+
                 if let result = result {
                     DispatchQueue.main.async {
                         self.currentTranscription = result.bestTranscription.formattedString
                     }
                     isFinal = result.isFinal
                 }
-                
+
+                if let error = error {
+                    print("Error en reconocimiento: \(error.localizedDescription)")
+                }
+
                 if error != nil || isFinal {
                     self.audioEngine.stop()
                     inputNode.removeTap(onBus: 0)
                     self.recognitionRequest = nil
                     self.recognitionTask = nil
-                    
-                    if let error = error {
-                        print("Error en reconocimiento: \(error.localizedDescription)")
-                    }
+                    if isFinal { DispatchQueue.main.async { self.finishAppleTranscription() } }
                 }
             }
         } catch {
@@ -231,179 +274,48 @@ class SpeechManager: NSObject, ObservableObject {
             print("Error al iniciar motor de audio: \(error)")
         }
     }
-    
-    private func getPythonPath() -> String {
-        let paths = [
-            "/opt/homebrew/bin/python3.12",
-            "/usr/local/bin/python3.12",
-            "/opt/homebrew/bin/python3",
-            "/usr/local/bin/python3",
-            "/usr/bin/python3"
-        ]
-        let fileManager = FileManager.default
-        for path in paths {
-            if fileManager.fileExists(atPath: path) {
-                return path
-            }
-        }
-        return "/usr/bin/env"
-    }
 
-    private func launchPythonApp() {
-        // Si ya hay un proceso de Python corriendo, no lo volvemos a lanzar
-        if let process = pythonProcess, process.isRunning {
-            print("[Python] El proceso de Python ya está en ejecución.")
-            return
-        }
-        
-        // Limpieza de referencias muertas
-        if pythonProcess != nil {
-            pythonProcess = nil
-        }
-        
-        updateStatus("Lanzando Whisper Python...", play: "Tink")
-        
-        let pythonPath = getPythonPath()
-        let task = Process()
-        self.pythonProcess = task
-        
-        // Inyectar rutas comunes al PATH para que el subproceso de Python pueda localizar ffmpeg, etc.
-        var env = ProcessInfo.processInfo.environment
-        let currentPath = env["PATH"] ?? ""
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + currentPath
-        // CRÍTICO: Forzar stdout sin buffer para que los mensajes [LOG] lleguen en tiempo real
-        env["PYTHONUNBUFFERED"] = "1"
-        task.environment = env
-        
-        if pythonPath == "/usr/bin/env" {
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            task.arguments = ["python3", "-u", "/Users/lukkes/Developer/whisper/dictado_whisper.py", "--headless"]
-        } else {
-            task.executableURL = URL(fileURLWithPath: pythonPath)
-            task.arguments = ["-u", "/Users/lukkes/Developer/whisper/dictado_whisper.py", "--headless"]
-        }
-        
-        // Capturar stdout para leer los mensajes [LOG] y mostrar progreso de descarga en la UI de Swift
-        let outputPipe = Pipe()
-        task.standardOutput = outputPipe
-        let outputHandle = outputPipe.fileHandleForReading
-        outputHandle.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty, let outputString = String(data: data, encoding: .utf8) else { return }
-            // Buscar líneas [LOG] del script de Python y extraer el mensaje
-            for line in outputString.components(separatedBy: .newlines) {
-                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.hasPrefix("[LOG] ") {
-                    let logMessage = String(trimmed.dropFirst(6))
-                    DispatchQueue.main.async {
-                        self.statusText = "🐍 " + logMessage
-                    }
-                }
-            }
-        }
-        
-        // Capturar stderr para depuración y mostrar errores en la UI
-        let errorPipe = Pipe()
-        task.standardError = errorPipe
-        let errorHandle = errorPipe.fileHandleForReading
-        var stderrAccumulator = ""
-        let stderrLock = NSLock()
-        errorHandle.readabilityHandler = { handle in
-            let data = handle.availableData
-            if let errorString = String(data: data, encoding: .utf8), !errorString.isEmpty {
-                print("[Python Error] \(errorString)")
-                stderrLock.lock()
-                stderrAccumulator += errorString
-                stderrLock.unlock()
-            }
-        }
-        
-        // Cuando el proceso termine, actualizar el estado y limpiar los handlers
-        task.terminationHandler = { [weak self] process in
-            DispatchQueue.main.async {
-                outputHandle.readabilityHandler = nil
-                errorHandle.readabilityHandler = nil
-                
-                if self?.pythonProcess == process {
-                    self?.pythonProcess = nil
-                }
-                
-                let exitCode = process.terminationStatus
-                if exitCode == 0 {
-                    self?.statusText = "Listo"
-                } else {
-                    // Si el proceso terminó intencionadamente por un SIGTERM (código 15), no mostrar error
-                    if exitCode == 15 {
-                        self?.statusText = "Listo"
-                        return
-                    }
-                    
-                    // Extraer la última línea significativa de stderr como mensaje de error
-                    stderrLock.lock()
-                    let errorLines = stderrAccumulator
-                    stderrLock.unlock()
-                    
-                    let lastLine = errorLines
-                        .components(separatedBy: .newlines)
-                        .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-                        .last ?? "Error desconocido"
-                    
-                    self?.statusText = "❌ Python: \(String(lastLine.prefix(80)))"
-                    
-                    // Regresar a Listo después de 8 segundos para dar tiempo a leer el error
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
-                        if !(self?.isRecording ?? false) {
-                            self?.statusText = "Listo"
-                        }
-                    }
-                }
-            }
-        }
-        
-        do {
-            try task.run()
-        } catch {
-            print("Error lanzando la app en Python: \(error)")
-            updateStatus("❌ Error al lanzar Python", play: "Basso")
-        }
-    }
-    
-    func stopRecording() {
+    private func stopAppleRecording() {
         guard isRecording else { return }
-        
         isRecording = false
         updateStatus("⌛ Transcribiendo...", play: "Ping")
-        
-        // Cerrar el popover si está abierto
         DispatchQueue.main.async {
-            if let delegate = NSApplication.shared.delegate as? AppDelegate {
-                delegate.closePopover(nil)
-            }
+            if let d = NSApplication.shared.delegate as? AppDelegate { d.closePopover(nil) }
         }
-        
         audioEngine.stop()
         recognitionRequest?.endAudio()
-        
-        // Esperar un momento para recibir el resultado final antes de procesar
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            let text = self.currentTranscription.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty {
-                self.updateStatus("✍️ Transcrito: \"\(text.prefix(30))...\"", play: "Glass")
-                self.copyAndPasteText(text)
-                HistoryManager.shared.addEntry(text: text)
-            } else {
-                self.updateStatus("⚠️ No se detectó voz", play: "Pop")
-            }
-            
-            // Regresar a Listo después de 3 segundos
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                if !self.isRecording {
-                    self.statusText = "Listo"
-                }
-            }
+        // Safety net: if isFinal never arrives within 3s, finish with whatever we have.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            guard let self, !self.finishedThisRound else { return }
+            self.finishAppleTranscription()
         }
     }
-    
+
+    private func finishAppleTranscription() {
+        guard !finishedThisRound else { return }
+        finishedThisRound = true
+        let text = currentTranscription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty {
+            updateStatus("✍️ Transcrito: \"\(text.prefix(30))...\"", play: "Glass")
+            copyAndPasteText(text)
+            HistoryManager.shared.addEntry(text: text)
+        } else {
+            updateStatus("⚠️ No se detectó voz", play: "Pop")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            if !self.isRecording { self.statusText = "Listo" }
+        }
+    }
+
+    // MARK: - Stop routing
+
+    func stopRecording() {
+        guard isRecording else { return }
+        if SettingsManager.shared.engine == "whisper" { stopWhisperRecording(); return }
+        stopAppleRecording()
+    }
+
+
     private func updateStatus(_ text: String, play soundName: String? = nil) {
         DispatchQueue.main.async {
             self.statusText = text

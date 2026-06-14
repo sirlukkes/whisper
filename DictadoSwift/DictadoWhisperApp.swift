@@ -78,7 +78,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationWillTerminate(_ notification: Notification) {
-        SpeechManager.shared.terminatePythonProcess()
+        // No-op: the Whisper engine runs in-process and needs no external teardown.
     }
 }
 

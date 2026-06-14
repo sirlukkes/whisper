@@ -32,6 +32,9 @@ class SpeechManager: NSObject, ObservableObject {
     // Serial queue: serializes transcriptions and removes the data race on
     // whisperEngine/loadedModelId (also avoids two transcriptions fighting for CPU).
     private let whisperQueue = DispatchQueue(label: "com.lukkes.dictadowhisper.transcribe")
+    // Engine latched at start, so stop routes to the SAME engine even if the user
+    // changes the picker mid-recording.
+    private var activeEngine = "apple"
 
     // Guard so the Apple transcription finishes exactly once per round (isFinal or 3s safety net)
     private var finishedThisRound = false
@@ -131,7 +134,8 @@ class SpeechManager: NSObject, ObservableObject {
         guard !isRecording else { return }
         capturePreviousApp()
 
-        if SettingsManager.shared.engine == "whisper" {
+        activeEngine = SettingsManager.shared.engine
+        if activeEngine == "whisper" {
             startWhisperRecording()
             return
         }
@@ -314,7 +318,7 @@ class SpeechManager: NSObject, ObservableObject {
 
     func stopRecording() {
         guard isRecording else { return }
-        if SettingsManager.shared.engine == "whisper" { stopWhisperRecording(); return }
+        if activeEngine == "whisper" { stopWhisperRecording(); return }
         stopAppleRecording()
     }
 

@@ -29,8 +29,10 @@ final class ModelManager: NSObject, ObservableObject {
     @Published private(set) var states: [String: ModelState] = [:]
     private var tasks: [String: URLSessionDownloadTask] = [:]
 
+    // delegateQueue: .main serializes all `tasks`/`states` access onto the main queue,
+    // eliminating the data race between ensureDownloaded (UI) and the delegate callbacks.
     private lazy var session: URLSession =
-        URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        URLSession(configuration: .default, delegate: self, delegateQueue: .main)
 
     static var modelsDir: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

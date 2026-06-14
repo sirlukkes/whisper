@@ -31,7 +31,10 @@ final class WhisperEngine {
         var output: String?
         lang.withCString { langPtr in
             params.language = langPtr
-            params.detect_language = (lang == "auto")
+            // language "auto" already triggers auto-detection AND transcription.
+            // detect_language=true would make whisper_full exit right after detecting
+            // the language (return 0, zero segments) — never set it for transcription.
+            params.detect_language = false
             let rc = samples.withUnsafeBufferPointer { buf in
                 whisper_full(ctx, params, buf.baseAddress, Int32(buf.count))
             }

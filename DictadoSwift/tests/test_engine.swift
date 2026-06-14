@@ -32,14 +32,25 @@ enum TestEngine {
         let samples = loadWavSamples(wavPath)
         guard !samples.isEmpty else { print("FAIL: no samples from \(wavPath)"); exit(1) }
 
-        guard let text = engine.transcribe(samples: samples, language: "en") else {
-            print("FAIL: transcribe returned nil"); exit(1)
+        // Case 1: explicit language "en" must transcribe.
+        guard let textEn = engine.transcribe(samples: samples, language: "en") else {
+            print("FAIL: transcribe(en) returned nil"); exit(1)
         }
-        print("Transcription: \(text)")
-        if text.lowercased().contains("country") {
-            print("PASS: test_engine"); exit(0)
-        } else {
-            print("FAIL: expected 'country' in output"); exit(1)
+        print("Transcription (en): \(textEn)")
+        guard textEn.lowercased().contains("country") else {
+            print("FAIL: expected 'country' in 'en' output"); exit(1)
         }
+
+        // Case 2: "auto" is the real dictation path. It must auto-detect the language
+        // AND transcribe — not just detect and exit (the detect_language regression).
+        guard let textAuto = engine.transcribe(samples: samples, language: "auto") else {
+            print("FAIL: transcribe(auto) returned nil"); exit(1)
+        }
+        print("Transcription (auto): \(textAuto)")
+        guard textAuto.lowercased().contains("country") else {
+            print("FAIL: 'auto' produced no transcription (detect_language bug)"); exit(1)
+        }
+
+        print("PASS: test_engine"); exit(0)
     }
 }

@@ -54,7 +54,7 @@ struct ContentView: View {
     var cardColor: Color { Color.themeCard(isDark: isDark) }
     var crustColor: Color { Color.themeCrust(isDark: isDark) }
     var surfaceColor: Color { Color.themeSurface(isDark: isDark) }
-    var lavenderColor: Color { Color.themeLavender(isDark: isDark) }
+    var accentColor: Color { Color.themeAccent(isDark: isDark) }
     var greenColor: Color { Color.themeGreen(isDark: isDark) }
     var redColor: Color { Color.themeRed(isDark: isDark) }
     var yellowColor: Color { Color.themeYellow(isDark: isDark) }
@@ -102,12 +102,14 @@ struct ContentView: View {
     private var dictationTab: some View {
         VStack(spacing: 12) {
             // Cabecera y botón de grabación
-            HStack {
+            HStack(spacing: 9) {
+                BrandLogo(size: 40)
+
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Dictado Nativo")
+                    Text("Conetxo Listener")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(lavenderColor)
-                    
+                        .foregroundColor(accentColor)
+
                     Text(speechManager.statusText)
                         .font(.system(size: 14))
                         .foregroundColor(statusColor)
@@ -140,7 +142,7 @@ struct ContentView: View {
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(baseColor)
                             .frame(width: 38, height: 38)
-                            .background(speechManager.isRecording ? redColor : lavenderColor)
+                            .background(speechManager.isRecording ? redColor : accentColor)
                             .clipShape(Circle())
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -166,7 +168,7 @@ struct ContentView: View {
                               systemImage: copiedLastTranscription ? "checkmark" : "doc.on.doc")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(copiedLastTranscription ? greenColor :
-                                (speechManager.currentTranscription.isEmpty ? subtextColor.opacity(0.4) : lavenderColor))
+                                (speechManager.currentTranscription.isEmpty ? subtextColor.opacity(0.4) : accentColor))
                     }
                     .buttonStyle(PlainButtonStyle())
                     .disabled(speechManager.currentTranscription.isEmpty)
@@ -277,12 +279,12 @@ struct ContentView: View {
                                 .font(.system(size: 13, weight: .semibold))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
-                                .foregroundColor(isListeningForShortcut ? baseColor : lavenderColor)
+                                .foregroundColor(isListeningForShortcut ? baseColor : accentColor)
                                 .background(isListeningForShortcut ? greenColor : surfaceColor)
                                 .cornerRadius(6)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 6)
-                                        .stroke(isListeningForShortcut ? greenColor : lavenderColor.opacity(0.5), lineWidth: 1)
+                                        .stroke(isListeningForShortcut ? greenColor : accentColor.opacity(0.5), lineWidth: 1)
                                 )
                         }
                         .buttonStyle(PlainButtonStyle())
@@ -329,7 +331,7 @@ struct ContentView: View {
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
                                 .foregroundColor(baseColor)
-                                .background(speechManager.isAccessibilityAuthorized ? greenColor : lavenderColor)
+                                .background(speechManager.isAccessibilityAuthorized ? greenColor : accentColor)
                                 .cornerRadius(6)
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -352,7 +354,7 @@ struct ContentView: View {
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(textColor)
                     }
-                    .toggleStyle(SwitchToggleStyle(tint: lavenderColor))
+                    .toggleStyle(SwitchToggleStyle(tint: accentColor))
                 }
                 .padding(10)
                 .background(cardColor)
@@ -366,15 +368,36 @@ struct ContentView: View {
 
             Spacer()
             
-            // Información inferior y botón de salir
-            HStack(alignment: .center, spacing: 10) {
-                Text(isListeningForShortcut ? "Presiona Esc para cancelar." : "Atajo de voz para empezar/parar la grabación.")
+            // Franja de marca + botón de salir. El texto de ayuda solo aparece mientras
+            // se graba un atajo, que es cuando de verdad hay algo que decir.
+            if isListeningForShortcut {
+                Text("Presiona Esc para cancelar.")
                     .font(.system(size: 12, weight: .light))
                     .foregroundColor(subtextColor.opacity(0.8))
-                    .multilineTextAlignment(.leading)
-                
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Divider().background(surfaceColor.opacity(0.3))
+
+            HStack(alignment: .center, spacing: 8) {
+                Button(action: { AboutWindowController.shared.show() }) {
+                    HStack(spacing: 8) {
+                        BrandLogo(size: 24)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Diseñado por")
+                                .font(.system(size: 10, weight: .regular))
+                                .foregroundColor(subtextColor)
+                            Text("Conetxo Solutions")
+                                .font(.system(size: 11.5, weight: .bold))
+                                .foregroundColor(accentColor)
+                        }
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help("Acerca de Conetxo Listener")
+
                 Spacer()
-                
+
                 Button(action: {
                     NSApplication.shared.terminate(nil)
                 }) {
@@ -442,7 +465,7 @@ struct ContentView: View {
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity)
                     .foregroundColor(baseColor)
-                    .background(lavenderColor)
+                    .background(accentColor)
                     .cornerRadius(6)
                 }
                 .buttonStyle(PlainButtonStyle())
@@ -486,10 +509,10 @@ struct ContentView: View {
             VStack(spacing: 6) {
                 Text(title)
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(activeTab == index ? lavenderColor : subtextColor)
+                    .foregroundColor(activeTab == index ? accentColor : subtextColor)
                     .padding(.top, 8)
                 Rectangle()
-                    .fill(activeTab == index ? lavenderColor : Color.clear)
+                    .fill(activeTab == index ? accentColor : Color.clear)
                     .frame(height: 2)
             }
         }
@@ -521,16 +544,16 @@ struct ContentView: View {
         case .downloading(let fraction, let detail):
             VStack(alignment: .leading, spacing: 3) {
                 Text("Descargando modelo… \(detail)").font(.system(size: 11)).foregroundColor(yellowColor)
-                ProgressView(value: fraction).tint(lavenderColor)
+                ProgressView(value: fraction).tint(accentColor)
             }
         case .notDownloaded:
             Button("Descargar modelo") { models.ensureDownloaded(settings.whisperModel) }
-                .font(.system(size: 11, weight: .bold)).foregroundColor(lavenderColor)
+                .font(.system(size: 11, weight: .bold)).foregroundColor(accentColor)
         case .failed(let msg):
             VStack(alignment: .leading, spacing: 3) {
                 Text("❌ \(msg)").font(.system(size: 11)).foregroundColor(redColor)
                 Button("Reintentar") { models.ensureDownloaded(settings.whisperModel) }
-                    .font(.system(size: 11, weight: .bold)).foregroundColor(lavenderColor)
+                    .font(.system(size: 11, weight: .bold)).foregroundColor(accentColor)
             }
         }
     }
@@ -553,7 +576,7 @@ struct ContentView: View {
                     Text("••••••••••••")
                         .font(.system(size: 13)).foregroundColor(subtextColor)
                     Button("Editar") { apiKeyDraft = ""; editingApiKey = true }
-                        .font(.system(size: 11, weight: .bold)).foregroundColor(lavenderColor)
+                        .font(.system(size: 11, weight: .bold)).foregroundColor(accentColor)
                         .buttonStyle(PlainButtonStyle())
                 }
                 Text("Guardada — el audio se envía a \(CloudEngine.provider(settings.cloudProvider).displayName) solo al transcribir")
@@ -577,7 +600,7 @@ struct ContentView: View {
                         apiKeyDraft = ""; editingApiKey = false
                     }
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(draftEmpty ? subtextColor.opacity(0.4) : lavenderColor)
+                    .foregroundColor(draftEmpty ? subtextColor.opacity(0.4) : accentColor)
                     .buttonStyle(PlainButtonStyle())
                     .disabled(draftEmpty)
                     if !savedKey.isEmpty {
@@ -651,7 +674,7 @@ struct HistoryRow: View {
     var subtextColor: Color { Color.themeSubtext(isDark: isDark) }
     var surfaceColor: Color { Color.themeSurface(isDark: isDark) }
     var greenColor: Color { Color.themeGreen(isDark: isDark) }
-    var lavenderColor: Color { Color.themeLavender(isDark: isDark) }
+    var accentColor: Color { Color.themeAccent(isDark: isDark) }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -683,7 +706,7 @@ struct HistoryRow: View {
                         Text(copied ? "Copiado" : "Copiar")
                             .font(.system(size: 11, weight: .bold))
                     }
-                    .foregroundColor(copied ? greenColor : lavenderColor)
+                    .foregroundColor(copied ? greenColor : accentColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 4)
                     .background(surfaceColor.opacity(0.4))
@@ -736,27 +759,27 @@ extension Color {
     
     // Métodos para resolver color dinámico basado en el modo del tema
     static func themeBase(isDark: Bool) -> Color {
-        isDark ? Color(hex: "1e1e2e") : Color(hex: "eff1f5")
+        isDark ? Color(hex: "12181f") : Color(hex: "fbfdfe")
     }
     
     static func themeCard(isDark: Bool) -> Color {
-        isDark ? Color(hex: "181825") : Color(hex: "e6e9ef")
+        isDark ? Color(hex: "0e141a") : Color(hex: "ffffff")
     }
     
     static func themeCrust(isDark: Bool) -> Color {
-        isDark ? Color(hex: "11111b") : Color(hex: "dce0e8")
+        isDark ? Color(hex: "0a0f14") : Color(hex: "edf4f8")
     }
     
     static func themeSurface(isDark: Bool) -> Color {
-        isDark ? Color(hex: "313244") : Color(hex: "ccd0da")
+        isDark ? Color(hex: "24313d") : Color(hex: "dce7ee")
     }
     
-    static func themeLavender(isDark: Bool) -> Color {
-        isDark ? Color(hex: "cba6f7") : Color(hex: "5733FF")
+    static func themeAccent(isDark: Bool) -> Color {
+        isDark ? Color(hex: "00aeef") : Color(hex: "0077a3")
     }
     
     static func themeGreen(isDark: Bool) -> Color {
-        isDark ? Color(hex: "a6e3a1") : Color(hex: "40a02b")
+        isDark ? Color(hex: "6fd47a") : Color(hex: "2e8b37")
     }
     
     static func themeRed(isDark: Bool) -> Color {
@@ -764,14 +787,14 @@ extension Color {
     }
     
     static func themeYellow(isDark: Bool) -> Color {
-        isDark ? Color(hex: "f9e2af") : Color(hex: "df8e1d")
+        isDark ? Color(hex: "ffab4d") : Color(hex: "ff7a00")
     }
     
     static func themeText(isDark: Bool) -> Color {
-        isDark ? Color(hex: "cdd6f4") : Color(hex: "4c4f69")
+        isDark ? Color(hex: "dce7f0") : Color(hex: "334155")
     }
     
     static func themeSubtext(isDark: Bool) -> Color {
-        isDark ? Color(hex: "a6adc8") : Color(hex: "6c6f85")
+        isDark ? Color(hex: "8fa3b4") : Color(hex: "64748b")
     }
 }

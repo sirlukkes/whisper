@@ -2,7 +2,7 @@
 set -e
 
 # Nombre de la aplicación y directorios
-APP_NAME="Dictado Whisper"
+APP_NAME="Conetxo Listener"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
@@ -31,7 +31,7 @@ if [ "$(uname -m)" = "arm64" ]; then
 fi
 
 echo "Compilando para arquitectura $ARCH..."
-swiftc -o "$MACOS_DIR/DictadoWhisper" \
+swiftc -o "$MACOS_DIR/ConetxoListener" \
     -sdk "$SDK_PATH" \
     -target "${ARCH}-apple-macosx13.0" \
     -O \
@@ -39,6 +39,7 @@ swiftc -o "$MACOS_DIR/DictadoWhisper" \
     -I "$VENDOR/include" -I "$VENDOR/ggml/include" \
     -framework Accelerate -framework AVFoundation -lc++ \
     DictadoWhisperApp.swift \
+    BrandKit.swift \
     ContentView.swift \
     SpeechManager.swift \
     HotkeyManager.swift \
@@ -53,20 +54,12 @@ swiftc -o "$MACOS_DIR/DictadoWhisper" \
 echo "📄 Copiando Info.plist..."
 cp Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
-# Intentar buscar e importar el ícono de la app anterior para no perder el diseño de IA
-ICON_PATH=""
-if [ -f "/Applications/Dictado Whisper.app/Contents/Resources/AppIcon.icns" ]; then
-    ICON_PATH="/Applications/Dictado Whisper.app/Contents/Resources/AppIcon.icns"
-elif [ -f "../Dictado Whisper.app/Contents/Resources/AppIcon.icns" ]; then
-    ICON_PATH="../Dictado Whisper.app/Contents/Resources/AppIcon.icns"
-fi
-
-if [ -n "$ICON_PATH" ]; then
-    echo "🎨 Copiando ícono existente desde: $ICON_PATH"
-    cp "$ICON_PATH" "$RESOURCES_DIR/AppIcon.icns"
-else
-    echo "⚠️ No se encontró el archivo AppIcon.icns. La app usará el ícono genérico."
-fi
+# Brand assets (app icon + UI logo) ship in the repo, versioned alongside the code.
+echo "🎨 Copiando assets de marca..."
+cp "$SCRIPT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+cp "$SCRIPT_DIR/Resources/BrandLogo.png" "$RESOURCES_DIR/BrandLogo.png"
+cp "$SCRIPT_DIR/Resources/BrandLogo@2x.png" "$RESOURCES_DIR/BrandLogo@2x.png"
+cp "$SCRIPT_DIR/Resources/BrandLogo@3x.png" "$RESOURCES_DIR/BrandLogo@3x.png"
 
 echo "🔏 Firmando la aplicación localmente (ad-hoc)..."
 # Strip extended attributes (resource forks / Finder info / quarantine) from the bundle.
@@ -76,11 +69,12 @@ xattr -cr "$APP_BUNDLE"
 codesign --force --deep --sign - "$APP_BUNDLE"
 
 echo "🚀 Instalando la aplicación en /Applications..."
-# The executable is "DictadoWhisper" (no space); kill by that name + the display name to be safe.
-killall DictadoWhisper "Dictado Whisper" 2>/dev/null || true
-rm -rf "/Applications/Dictado Whisper.app"
+# The executable is "ConetxoListener" (no space); kill by that name + the display name.
+# Legacy names stay in the list so an upgrade from Dictado Whisper does not leave a stray process.
+killall ConetxoListener "Conetxo Listener" DictadoWhisper "Dictado Whisper" 2>/dev/null || true
+rm -rf "/Applications/$APP_NAME.app"
 cp -R "$APP_BUNDLE" "/Applications/"
 
 echo "✅ ¡$APP_NAME.app compilada e instalada en /Applications con éxito!"
 echo "Abriendo la aplicación desde /Applications..."
-open "/Applications/Dictado Whisper.app"
+open "/Applications/$APP_NAME.app"

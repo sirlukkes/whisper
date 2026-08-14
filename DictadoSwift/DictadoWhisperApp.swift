@@ -18,9 +18,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Dictado Whisper")
-            button.action = #selector(togglePopover(_:))
+            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: Brand.appName)
+            button.action = #selector(statusItemClicked(_:))
             button.target = self
+            // Right-click opens the menu; left-click keeps its original behaviour (toggle popover).
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         
         // Escuchar el estado de grabación para cambiar el ícono y color en la barra de menús
@@ -32,6 +34,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    /// Left-click toggles the popover; right-click shows the app menu.
+    @objc func statusItemClicked(_ sender: AnyObject?) {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            showMenu()
+        } else {
+            togglePopover(sender)
+        }
+    }
+
+    private func showMenu() {
+        closePopover(nil)
+
+        let menu = NSMenu()
+        let about = NSMenuItem(title: "Acerca de \(Brand.appName)",
+                               action: #selector(showAbout), keyEquivalent: "")
+        about.target = self
+        menu.addItem(about)
+        menu.addItem(.separator())
+
+        let open = NSMenuItem(title: "Abrir \(Brand.appName)",
+                              action: #selector(openFromMenu), keyEquivalent: "")
+        open.target = self
+        menu.addItem(open)
+
+        let toggle = NSMenuItem(title: SpeechManager.shared.isRecording ? "Detener dictado" : "Iniciar dictado",
+                                action: #selector(toggleRecordingFromMenu), keyEquivalent: "")
+        toggle.target = self
+        menu.addItem(toggle)
+
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Salir", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+
+        // popUpMenu is deprecated; assigning the menu and re-clicking is the supported path.
+        statusItem?.menu = menu
+        statusItem?.button?.performClick(nil)
+        statusItem?.menu = nil
+    }
+
+    @objc private func showAbout() { AboutWindowController.shared.show() }
+    @objc private func openFromMenu() { showPopover() }
+    @objc private func toggleRecordingFromMenu() { SpeechManager.shared.toggleRecording() }
+
     @objc func togglePopover(_ sender: AnyObject?) {
         if popover.isShown {
             closePopover(sender)
@@ -64,7 +108,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 button.contentTintColor = NSColor.systemRed
             } else {
                 // Al detenerse: Restaurar ícono original y limpiar el texto/color
-                button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Dictado Whisper")
+                button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: Brand.appName)
                 button.title = ""
                 button.contentTintColor = nil
             }
@@ -83,7 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct DictadoWhisperApp: App {
+struct ConetxoListenerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     
     var body: some Scene {

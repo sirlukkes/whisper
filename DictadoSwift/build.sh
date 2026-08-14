@@ -45,6 +45,7 @@ swiftc -o "$MACOS_DIR/DictadoWhisper" \
     SettingsManager.swift \
     HistoryManager.swift \
     WhisperEngine.swift \
+    CloudEngine.swift \
     AudioRecorder.swift \
     ModelManager.swift \
     $WLIBS

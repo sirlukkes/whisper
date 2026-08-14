@@ -199,12 +199,13 @@ struct ContentView: View {
                         Picker("", selection: $settings.engine) {
                             Text("Whisper Local").tag("whisper")
                             Text("Apple Local").tag("apple")
+                            Text("Nube (Groq/OpenAI)").tag("cloud")
                         }
                         .pickerStyle(MenuPickerStyle())
                         .frame(width: 195)
                         .labelsHidden()
                     }
-                    
+
                     // 2b. Selector de Modelo Whisper (Solo si el motor es whisper)
                     if settings.engine == "whisper" {
                         Divider().background(surfaceColor.opacity(0.3))
@@ -218,6 +219,22 @@ struct ContentView: View {
                             .onChange(of: settings.whisperModel) { newId in models.ensureDownloaded(newId) }
                         }
                         whisperModelStatusRow
+                    }
+
+                    // 2c. Proveedor de nube + API key (solo si el motor es cloud)
+                    if settings.engine == "cloud" {
+                        Divider().background(surfaceColor.opacity(0.3))
+                        HStack {
+                            Text("Proveedor:").font(.system(size: 14, weight: .bold)).foregroundColor(textColor)
+                            Spacer()
+                            Picker("", selection: $settings.cloudProvider) {
+                                ForEach(CloudEngine.providers, id: \.id) { p in
+                                    Text(p.displayName).tag(p.id)
+                                }
+                            }
+                            .pickerStyle(MenuPickerStyle()).frame(width: 195).labelsHidden()
+                        }
+                        cloudApiKeyRow
                     }
                     
                     Divider()
@@ -495,6 +512,38 @@ struct ContentView: View {
                 Text("❌ \(msg)").font(.system(size: 11)).foregroundColor(redColor)
                 Button("Reintentar") { models.ensureDownloaded(settings.whisperModel) }
                     .font(.system(size: 11, weight: .bold)).foregroundColor(lavenderColor)
+            }
+        }
+    }
+
+    // API key row for the cloud engine section: one key per provider, inline validation.
+    @ViewBuilder private var cloudApiKeyRow: some View {
+        let keyBinding = Binding<String>(
+            get: { settings.cloudProvider == "openai" ? settings.openaiApiKey : settings.groqApiKey },
+            set: {
+                if settings.cloudProvider == "openai" { settings.openaiApiKey = $0 }
+                else { settings.groqApiKey = $0 }
+            }
+        )
+        let keyEmpty = keyBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("API key:").font(.system(size: 14, weight: .bold)).foregroundColor(textColor)
+                Spacer()
+                SecureField("Pega aquí tu API key", text: keyBinding)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .frame(width: 195)
+                    .overlay(RoundedRectangle(cornerRadius: 6)
+                        .stroke(keyEmpty ? redColor : Color.clear, lineWidth: 1))
+            }
+            if keyEmpty {
+                Text("Requerida para transcribir — créala en \(CloudEngine.provider(settings.cloudProvider).keyConsoleURL)")
+                    .font(.system(size: 11)).foregroundColor(redColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text("El audio se envía a \(CloudEngine.provider(settings.cloudProvider).displayName) solo al transcribir")
+                    .font(.system(size: 11)).foregroundColor(subtextColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

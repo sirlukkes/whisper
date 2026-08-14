@@ -51,7 +51,30 @@ class SettingsManager: ObservableObject {
             NotificationCenter.default.post(name: .whisperSettingsChanged, object: nil)
         }
     }
-    
+
+    // Cloud engine: provider + one API key per provider (switching providers keeps both).
+    // Note: keys live in UserDefaults (plaintext plist) — acceptable for a personal
+    // machine; move to Keychain if this app ever distributes beyond the operator.
+    @Published var cloudProvider: String {
+        didSet {
+            UserDefaults.standard.set(cloudProvider, forKey: "cloudProvider")
+            NotificationCenter.default.post(name: .whisperSettingsChanged, object: nil)
+        }
+    }
+
+    @Published var groqApiKey: String {
+        didSet { UserDefaults.standard.set(groqApiKey, forKey: "groqApiKey") }
+    }
+
+    @Published var openaiApiKey: String {
+        didSet { UserDefaults.standard.set(openaiApiKey, forKey: "openaiApiKey") }
+    }
+
+    /// API key for the currently selected cloud provider.
+    var cloudApiKey: String {
+        cloudProvider == "openai" ? openaiApiKey : groqApiKey
+    }
+
     private init() {
         // Defaults: Spanish (es-ES), playSounds = true
         self.language = UserDefaults.standard.string(forKey: "language") ?? "es-ES"
@@ -60,6 +83,9 @@ class SettingsManager: ObservableObject {
         self.theme = UserDefaults.standard.string(forKey: "theme") ?? "system"
         self.engine = UserDefaults.standard.string(forKey: "engine") ?? "whisper"
         self.whisperModel = UserDefaults.standard.string(forKey: "whisperModel") ?? "base"
+        self.cloudProvider = UserDefaults.standard.string(forKey: "cloudProvider") ?? "groq"
+        self.groqApiKey = UserDefaults.standard.string(forKey: "groqApiKey") ?? ""
+        self.openaiApiKey = UserDefaults.standard.string(forKey: "openaiApiKey") ?? ""
 
         // Keycode 15 is virtual key code for 'R'
         // Modifiers 6144 is controlKey (4096) + optionKey (2048)

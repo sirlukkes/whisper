@@ -27,6 +27,7 @@ class SpeechManager: NSObject, ObservableObject {
 
     // Whisper (in-process) engine
     private let audioRecorder = AudioRecorder()
+    private let cloudEngine = CloudEngine()
     private var whisperEngine: WhisperEngine?
     private var loadedModelId: String?
     // Serial queue: serializes transcriptions and removes the data race on
@@ -60,6 +61,9 @@ class SpeechManager: NSObject, ObservableObject {
 
         // Solicitar permisos al iniciar
         requestPermissions()
+
+        // Warm the Whisper model at app start so the first dictation doesn't pay the load.
+        if SettingsManager.shared.engine == "whisper" { preloadWhisperEngine() }
     }
     
     @objc private func workspaceDidActivateApplication(_ notification: Notification) {
@@ -72,9 +76,26 @@ class SpeechManager: NSObject, ObservableObject {
     }
     
     @objc private func handleSettingsChanged() {
-        // The Whisper engine reloads its model lazily on stop when the model id changes,
-        // and the Apple flow re-creates the recognizer at the start of each recording,
-        // so there is nothing to do here on a live settings change.
+        // The Apple flow re-creates the recognizer at the start of each recording.
+        // For Whisper, warm the engine now so a model switch doesn't cost load time
+        // on the next dictation (no-op if the selected model isn't downloaded yet).
+        if SettingsManager.shared.engine == "whisper" { preloadWhisperEngine() }
+    }
+
+    /// Load the Whisper model ahead of time (app start, settings change, recording
+    /// start) so the load cost is hidden instead of paid after the user stops
+    /// speaking. Runs on whisperQueue, so a transcription queued behind it reuses
+    /// the already-loaded engine.
+    private func preloadWhisperEngine() {
+        let modelId = SettingsManager.shared.whisperModel
+        guard ModelManager.shared.isReady(modelId) else { return }
+        whisperQueue.async { [weak self] in
+            guard let self else { return }
+            if self.whisperEngine == nil || self.loadedModelId != modelId {
+                self.whisperEngine = WhisperEngine(modelPath: ModelManager.shared.localPath(for: modelId).path)
+                self.loadedModelId = modelId
+            }
+        }
     }
 
     func checkAccessibilityPermissions() {
@@ -139,6 +160,10 @@ class SpeechManager: NSObject, ObservableObject {
             startWhisperRecording()
             return
         }
+        if activeEngine == "cloud" {
+            startCloudRecording()
+            return
+        }
         startAppleRecording()
     }
 
@@ -168,6 +193,8 @@ class SpeechManager: NSObject, ObservableObject {
             isRecording = true
             currentTranscription = ""
             updateStatus("🎤 Grabando...", play: "Tink")
+            // Load the model (if not warm yet) WHILE the user speaks, not after.
+            preloadWhisperEngine()
         } catch {
             updateStatus("❌ Error de micrófono", play: "Basso")
         }
@@ -197,6 +224,55 @@ class SpeechManager: NSObject, ObservableObject {
                     self.updateStatus("✍️ Transcrito: \"\(text.prefix(30))...\"", play: "Glass")
                     self.copyAndPasteText(text)
                     HistoryManager.shared.addEntry(text: text)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    if !self.isRecording { self.statusText = "Listo" }
+                }
+            }
+        }
+    }
+
+    // MARK: - Cloud engine (Groq / OpenAI)
+
+    private func startCloudRecording() {
+        guard !SettingsManager.shared.cloudApiKey
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            updateStatus("⚠️ Configura la API key en ajustes", play: "Basso")
+            return
+        }
+        do {
+            try audioRecorder.start()
+            isRecording = true
+            currentTranscription = ""
+            updateStatus("🎤 Grabando...", play: "Tink")
+        } catch {
+            updateStatus("❌ Error de micrófono", play: "Basso")
+        }
+    }
+
+    private func stopCloudRecording() {
+        isRecording = false
+        updateStatus("☁️ Transcribiendo...", play: "Ping")
+        let samples = audioRecorder.stop()
+        DispatchQueue.main.async {
+            if let d = NSApplication.shared.delegate as? AppDelegate { d.closePopover(nil) }
+        }
+        let settings = SettingsManager.shared
+        cloudEngine.transcribe(samples: samples,
+                               providerId: settings.cloudProvider,
+                               apiKey: settings.cloudApiKey) { [weak self] result in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let text) where !text.isEmpty:
+                    self.currentTranscription = text
+                    self.updateStatus("✍️ Transcrito: \"\(text.prefix(30))...\"", play: "Glass")
+                    self.copyAndPasteText(text)
+                    HistoryManager.shared.addEntry(text: text)
+                case .success:
+                    self.updateStatus("⚠️ No se detectó voz", play: "Pop")
+                case .failure(let err):
+                    self.updateStatus("❌ \(err.userMessage)", play: "Basso")
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     if !self.isRecording { self.statusText = "Listo" }
@@ -319,6 +395,7 @@ class SpeechManager: NSObject, ObservableObject {
     func stopRecording() {
         guard isRecording else { return }
         if activeEngine == "whisper" { stopWhisperRecording(); return }
+        if activeEngine == "cloud" { stopCloudRecording(); return }
         stopAppleRecording()
     }
 

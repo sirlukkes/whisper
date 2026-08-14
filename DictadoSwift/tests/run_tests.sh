@@ -48,4 +48,7 @@ run_test test_audio "$DS_DIR/AudioRecorder.swift" "$SCRIPT_DIR/test_audio.swift"
 TEST_ARGS=()
 run_test test_modelmanager "$DS_DIR/ModelManager.swift" "$SCRIPT_DIR/test_modelmanager.swift"
 
+TEST_ARGS=()
+run_test test_cloudengine "$DS_DIR/CloudEngine.swift" "$SCRIPT_DIR/test_cloudengine.swift"
+
 exit $FAILED

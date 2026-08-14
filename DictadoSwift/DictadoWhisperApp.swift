@@ -10,7 +10,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ = HotkeyManager.shared
         
         // Crear el Popover que contiene nuestra vista SwiftUI
-        popover.contentSize = NSSize(width: 380, height: 450)
+        popover.contentSize = NSSize(width: 380, height: 770)
         popover.behavior = .transient // Se cierra al hacer clic fuera
         popover.contentViewController = NSHostingController(rootView: ContentView(speechManager: SpeechManager.shared))
         

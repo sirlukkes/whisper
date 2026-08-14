@@ -44,6 +44,11 @@ class SpeechManager: NSObject, ObservableObject {
         super.init()
         setupRecognizer()
         checkAccessibilityPermissions()
+
+        // The main screen always shows the last transcription (with a copy button),
+        // so seed it from history at launch. Whisper/cloud recordings keep it on
+        // screen while recording; only the Apple engine clears it to stream partials.
+        currentTranscription = HistoryManager.shared.entries.first?.text ?? ""
         
         // Escuchar el atajo de teclado global
         NotificationCenter.default.addObserver(self, selector: #selector(toggleRecording), name: .globalHotkeyTriggered, object: nil)
@@ -191,7 +196,6 @@ class SpeechManager: NSObject, ObservableObject {
         do {
             try audioRecorder.start()
             isRecording = true
-            currentTranscription = ""
             updateStatus("🎤 Grabando...", play: "Tink")
             // Load the model (if not warm yet) WHILE the user speaks, not after.
             preloadWhisperEngine()
@@ -243,7 +247,6 @@ class SpeechManager: NSObject, ObservableObject {
         do {
             try audioRecorder.start()
             isRecording = true
-            currentTranscription = ""
             updateStatus("🎤 Grabando...", play: "Tink")
         } catch {
             updateStatus("❌ Error de micrófono", play: "Basso")

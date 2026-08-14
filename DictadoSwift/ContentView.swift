@@ -34,6 +34,11 @@ struct ContentView: View {
     
     // Estado para animar el botón de grabación
     @State private var pulseScale: CGFloat = 1.0
+    @State private var copiedLastTranscription = false
+    // API key edit mode: the saved key shows locked (masked); typing only happens
+    // in an explicit edit state with its own draft, so it can't be erased by accident.
+    @State private var editingApiKey = false
+    @State private var apiKeyDraft = ""
     
     // Resolver si debemos mostrar el modo oscuro o claro
     var isDark: Bool {
@@ -81,7 +86,7 @@ struct ContentView: View {
             }
             .padding(14)
         }
-        .frame(width: 380, height: 450) // Ancho y alto ampliados para mejor legibilidad
+        .frame(width: 380, height: 770) // Tall enough to show all settings without scrolling
         .background(baseColor)
         .preferredColorScheme(settings.theme == "system" ? nil : (settings.theme == "dark" ? .dark : .light))
         .onAppear {
@@ -143,27 +148,41 @@ struct ContentView: View {
                 .frame(width: 42, height: 42)
             }
             
-            // Vista previa de la transcripción en tiempo real
-            if speechManager.isRecording || !speechManager.currentTranscription.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Texto detectado:")
+            // Última transcripción — siempre visible, con botón de copiar.
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(speechManager.isRecording ? "Texto detectado:" : "Última transcripción:")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(subtextColor)
-                    
-                    ScrollView {
-                        Text(speechManager.currentTranscription.isEmpty ? "Escuchando..." : speechManager.currentTranscription)
-                            .font(.system(size: 14))
-                            .foregroundColor(speechManager.currentTranscription.isEmpty ? subtextColor.opacity(0.6) : textColor)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer()
+                    // Copy button: visible but dimmed/disabled when there is nothing to copy.
+                    Button(action: {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(speechManager.currentTranscription, forType: .string)
+                        copiedLastTranscription = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copiedLastTranscription = false }
+                    }) {
+                        Label(copiedLastTranscription ? "¡Copiado!" : "Copiar",
+                              systemImage: copiedLastTranscription ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(copiedLastTranscription ? greenColor :
+                                (speechManager.currentTranscription.isEmpty ? subtextColor.opacity(0.4) : lavenderColor))
                     }
-                    .frame(height: 60)
-                    .padding(6)
-                    .background(crustColor.opacity(0.5))
-                    .cornerRadius(6)
+                    .buttonStyle(PlainButtonStyle())
+                    .disabled(speechManager.currentTranscription.isEmpty)
                 }
-            } else {
-                Spacer()
-                    .frame(height: 60)
+
+                ScrollView {
+                    Text(transcriptionBoxText)
+                        .font(.system(size: 14))
+                        .foregroundColor(speechManager.currentTranscription.isEmpty ? subtextColor.opacity(0.6) : textColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(height: 200) // ~10 lines visible; scrolls only for unusually long dictations
+                .padding(6)
+                .background(crustColor.opacity(0.5))
+                .cornerRadius(6)
             }
             
             // Tarjeta de Ajustes
@@ -343,8 +362,8 @@ struct ContentView: View {
                         .stroke(surfaceColor.opacity(0.5), lineWidth: 1)
                 )
             }
-            .frame(maxHeight: 230)
-            
+            .frame(maxHeight: .infinity) // fill the popover; scrolls only if content overflows
+
             Spacer()
             
             // Información inferior y botón de salir
@@ -516,36 +535,65 @@ struct ContentView: View {
         }
     }
 
-    // API key row for the cloud engine section: one key per provider, inline validation.
+    // Text for the always-visible transcription box.
+    private var transcriptionBoxText: String {
+        if !speechManager.currentTranscription.isEmpty { return speechManager.currentTranscription }
+        return speechManager.isRecording ? "Escuchando..." : "Aquí quedará tu última transcripción."
+    }
+
+    // API key row for the cloud engine section. A saved key shows LOCKED (masked,
+    // read-only) with an explicit Editar flow, so casual typing can never erase it.
     @ViewBuilder private var cloudApiKeyRow: some View {
-        let keyBinding = Binding<String>(
-            get: { settings.cloudProvider == "openai" ? settings.openaiApiKey : settings.groqApiKey },
-            set: {
-                if settings.cloudProvider == "openai" { settings.openaiApiKey = $0 }
-                else { settings.groqApiKey = $0 }
-            }
-        )
-        let keyEmpty = keyBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let savedKey = settings.cloudApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("API key:").font(.system(size: 14, weight: .bold)).foregroundColor(textColor)
-                Spacer()
-                SecureField("Pega aquí tu API key", text: keyBinding)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .frame(width: 195)
-                    .overlay(RoundedRectangle(cornerRadius: 6)
-                        .stroke(keyEmpty ? redColor : Color.clear, lineWidth: 1))
-            }
-            if keyEmpty {
-                Text("Requerida para transcribir — créala en \(CloudEngine.provider(settings.cloudProvider).keyConsoleURL)")
-                    .font(.system(size: 11)).foregroundColor(redColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Text("El audio se envía a \(CloudEngine.provider(settings.cloudProvider).displayName) solo al transcribir")
+            if !savedKey.isEmpty && !editingApiKey {
+                HStack {
+                    Text("API key:").font(.system(size: 14, weight: .bold)).foregroundColor(textColor)
+                    Spacer()
+                    Text("••••••••••••")
+                        .font(.system(size: 13)).foregroundColor(subtextColor)
+                    Button("Editar") { apiKeyDraft = ""; editingApiKey = true }
+                        .font(.system(size: 11, weight: .bold)).foregroundColor(lavenderColor)
+                        .buttonStyle(PlainButtonStyle())
+                }
+                Text("Guardada — el audio se envía a \(CloudEngine.provider(settings.cloudProvider).displayName) solo al transcribir")
                     .font(.system(size: 11)).foregroundColor(subtextColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                let draftEmpty = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                HStack(spacing: 6) {
+                    Text("API key:").font(.system(size: 14, weight: .bold)).foregroundColor(textColor)
+                    Spacer()
+                    SecureField("Pega aquí tu API key", text: $apiKeyDraft)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .frame(width: 140)
+                        .overlay(RoundedRectangle(cornerRadius: 6)
+                            .stroke(draftEmpty && savedKey.isEmpty ? redColor : Color.clear, lineWidth: 1))
+                    // Visible but dimmed until there is something to save.
+                    Button("Guardar") {
+                        let k = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if settings.cloudProvider == "openai" { settings.openaiApiKey = k }
+                        else { settings.groqApiKey = k }
+                        apiKeyDraft = ""; editingApiKey = false
+                    }
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(draftEmpty ? subtextColor.opacity(0.4) : lavenderColor)
+                    .buttonStyle(PlainButtonStyle())
+                    .disabled(draftEmpty)
+                    if !savedKey.isEmpty {
+                        Button("Cancelar") { apiKeyDraft = ""; editingApiKey = false }
+                            .font(.system(size: 11)).foregroundColor(subtextColor)
+                            .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                if savedKey.isEmpty {
+                    Text("Requerida para transcribir — créala en \(CloudEngine.provider(settings.cloudProvider).keyConsoleURL)")
+                        .font(.system(size: 11)).foregroundColor(redColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
+        .onChange(of: settings.cloudProvider) { _ in apiKeyDraft = ""; editingApiKey = false }
     }
 
     // Funciones del monitor de atajo dinámico

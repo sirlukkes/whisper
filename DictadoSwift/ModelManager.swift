@@ -18,12 +18,17 @@ enum ModelState: Equatable {
 final class ModelManager: NSObject, ObservableObject {
     static let shared = ModelManager()
 
+    // Quantized q5_1 variants: notably faster on Intel CPUs (AVX2) with minimal
+    // accuracy loss. Avoid q5_0/q8_0 — slower than q5_1 on x86 due to unpack overhead.
     static let catalog: [WhisperModelInfo] = [
-        .init(id: "tiny",     displayName: "Tiny (~75 MB - rápido)",         approxBytes: 77_700_000),
-        .init(id: "base",     displayName: "Base (~142 MB - equilibrado)",   approxBytes: 147_950_000),
-        .init(id: "small",    displayName: "Small (~466 MB - preciso)",      approxBytes: 487_600_000),
-        .init(id: "medium",   displayName: "Medium (~1.5 GB - muy preciso)", approxBytes: 1_533_760_000),
-        .init(id: "large-v3", displayName: "Large v3 (~2.9 GB - máximo)",    approxBytes: 3_094_620_000),
+        .init(id: "tiny",       displayName: "Tiny (~75 MB - rápido)",              approxBytes: 77_700_000),
+        .init(id: "tiny-q5_1",  displayName: "Tiny Q5 (~32 MB - el más rápido)",    approxBytes: 32_152_673),
+        .init(id: "base",       displayName: "Base (~142 MB - equilibrado)",        approxBytes: 147_950_000),
+        .init(id: "base-q5_1",  displayName: "Base Q5 (~60 MB - rápido y equilibrado)", approxBytes: 59_707_625),
+        .init(id: "small",      displayName: "Small (~466 MB - preciso)",           approxBytes: 487_600_000),
+        .init(id: "small-q5_1", displayName: "Small Q5 (~190 MB - rápido y preciso)", approxBytes: 190_085_487),
+        .init(id: "medium",     displayName: "Medium (~1.5 GB - muy preciso)",      approxBytes: 1_533_760_000),
+        .init(id: "large-v3",   displayName: "Large v3 (~2.9 GB - máximo)",         approxBytes: 3_094_620_000),
     ]
 
     @Published private(set) var states: [String: ModelState] = [:]

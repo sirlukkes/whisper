@@ -20,12 +20,15 @@ Tests: `DictadoSwift/tests/run_tests.sh`
 
 ## Architecture
 
-### Dual-engine design
+### Triple-engine design
 
 `SettingsManager.engine` selects the transcription backend (default `"whisper"`):
 
-- `"whisper"` — **WhisperEngine.swift** calls whisper.cpp via the C API declared in `whisper-bridging.h`. whisper.cpp is vendored under `DictadoSwift/vendor/` and compiled to a static lib by `DictadoSwift/scripts/build_whisper_lib.sh`. Audio is captured by **AudioRecorder.swift** as 16 kHz mono float32 PCM. Models are downloaded with a progress bar by **ModelManager.swift**; they live in `~/Library/Application Support/DictadoWhisper/models/`. Default model: `base` (~142 MB). Language defaults to `es-ES`; can be set to `auto` for multilingual auto-detection.
+- `"whisper"` — **WhisperEngine.swift** calls whisper.cpp via the C API declared in `whisper-bridging.h`. whisper.cpp is vendored under `DictadoSwift/vendor/` and compiled to a static lib by `DictadoSwift/scripts/build_whisper_lib.sh`. Audio is captured by **AudioRecorder.swift** as 16 kHz mono float32 PCM. Models are downloaded with a progress bar by **ModelManager.swift** (catalog includes q5_1 quantized variants — faster on Intel; q5_0/q8_0 deliberately excluded, slower on x86); they live in `~/Library/Application Support/DictadoWhisper/models/`. The engine is preloaded at app start / settings change / recording start so dictation never pays model-load time. Whisper always transcribes with `language="auto"` (operator dictates Spanish AND English — do not hardcode "es").
 - `"apple"` — `SFSpeechRecognizer` with `requiresOnDeviceRecognition = true`. Audio captured via `AVAudioEngine` tap; partial results stream into `currentTranscription`.
+- `"cloud"` — **CloudEngine.swift**, OpenAI-compatible `/audio/transcriptions` multipart client. Providers: Groq `whisper-large-v3-turbo` (default) and OpenAI `gpt-4o-mini-transcribe`; per-provider API key in `SettingsManager` (UserDefaults — deliberate: ad-hoc re-signing on each rebuild would make Keychain prompt constantly). Language omitted → provider auto-detects.
+
+`build.sh` lists source files EXPLICITLY — a new `.swift` file must be added there or the build fails with "cannot find X in scope".
 
 ### Component map
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-08 [Claude] Launch at login (SMAppService) + quiet startup
+
+- **Files:** `DictadoSwift/LaunchAtLoginManager.swift` (new); `DictadoWhisperApp.swift`, `ContentView.swift`, `build.sh`; docs (`CLAUDE.md`, `PROJECT_STATUS.md`, `install.md`).
+- **Change:** "Iniciar al encender el Mac" toggle in the settings card and as a checked item in the right-click menu, backed by `SMAppService.mainApp` (macOS 13+). Enabled state is always read from the system, errors surface inline. When launched as a login item (`keyAELaunchedAsLogInItem` Apple Event) the startup popover is suppressed. Popover 770→820 px. `build.sh` links `ServiceManagement`.
+- **Reason:** Menu-bar-only app (no Dock icon) had no in-app way to start with the session.
+- **Deploy:** local app rebuilt + installed on the Intel Mac. Suite 4/4 green. Quiet-startup path `[sin verificar]` until the operator logs in with the toggle on.
+
+## 2026-08-14 [Claude] Rebrand to Conetxo Listener (logged retroactively 2026-09-08)
+
+- **Files:** `DictadoSwift/BrandKit.swift` + `Resources/{AppIcon.icns,BrandLogo.png}` (new); `Info.plist`, `build.sh`, `DictadoWhisperApp.swift`, `ContentView.swift`; `branding/` masters.
+- **Change:** App renamed Conetxo Listener (Conetxo Solutions). Bundle `com.conetxo.listener`, executable `ConetxoListener`, About window, brand logo in the popover header. Commits `74f21d5`, `616282e`, `25402d0`.
+- **Deploy:** local rebuild. Docs were not updated at the time; fixed in the 2026-09-08 entry.
+
 ## 2026-08-14 [Claude] Cloud engine (Groq/OpenAI), Whisper perf, UI overhaul
 
 - **Files:** `DictadoSwift/CloudEngine.swift` + `tests/test_cloudengine.swift` (new); `SpeechManager.swift`, `SettingsManager.swift`, `ContentView.swift`, `ModelManager.swift`, `DictadoWhisperApp.swift`, `build.sh`, `tests/run_tests.sh`.

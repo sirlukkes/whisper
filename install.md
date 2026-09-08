@@ -1,4 +1,4 @@
-# Dictado Whisper — Instalación (app nativa)
+# Conetxo Listener (ex Dictado Whisper) — Instalación (app nativa)
 
 App de dictado por voz para macOS. Motor por defecto: **Whisper nativo** (whisper.cpp, multidioma con auto-detección). Motor alterno: **Apple** (dictado local del sistema).
 
@@ -15,7 +15,7 @@ La primera compilación clona y compila whisper.cpp (~1–2 min). Las siguientes
 
 ## Primer uso
 1. **Micrófono**: acepta el permiso al primer dictado.
-2. **Accesibilidad** (para pegar con Cmd+V): Configuración del Sistema → Privacidad y Seguridad → Accesibilidad → activa "Dictado Whisper".
+2. **Accesibilidad** (para pegar con Cmd+V): Configuración del Sistema → Privacidad y Seguridad → Accesibilidad → activa "Conetxo Listener".
 3. **Modelo Whisper**: abre el panel (ícono de micrófono), elige el modelo (por defecto `base`, ~142 MB). Se descarga mostrando una barra de progreso. Una vez descargado, funciona 100% offline.
 
 ## Uso

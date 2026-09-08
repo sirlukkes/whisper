@@ -6,7 +6,8 @@ struct ContentView: View {
     @StateObject private var settings = SettingsManager.shared
     @ObservedObject private var historyManager = HistoryManager.shared
     @ObservedObject private var models = ModelManager.shared
-    
+    @ObservedObject private var launchAtLogin = LaunchAtLoginManager.shared
+
     // Pestaña activa (0 = Dictar, 1 = Historial)
     @State private var activeTab = 0
     
@@ -86,12 +87,14 @@ struct ContentView: View {
             }
             .padding(14)
         }
-        .frame(width: 380, height: 770) // Tall enough to show all settings without scrolling
+        .frame(width: 380, height: 820) // Tall enough to show all settings without scrolling
         .background(baseColor)
         .preferredColorScheme(settings.theme == "system" ? nil : (settings.theme == "dark" ? .dark : .light))
         .onAppear {
             speechManager.checkAccessibilityPermissions()
             if settings.engine == "whisper" { models.ensureDownloaded(settings.whisperModel) }
+            // The user may have toggled it from System Settings; re-read the system state.
+            launchAtLogin.refresh()
         }
         .onDisappear {
             stopShortcutListening()
@@ -355,6 +358,26 @@ struct ContentView: View {
                             .foregroundColor(textColor)
                     }
                     .toggleStyle(SwitchToggleStyle(tint: accentColor))
+
+                    Divider()
+                        .background(surfaceColor.opacity(0.3))
+
+                    // 6. Launch at login (state owned by the system via SMAppService, not UserDefaults)
+                    Toggle(isOn: Binding(
+                        get: { launchAtLogin.isEnabled },
+                        set: { launchAtLogin.setEnabled($0) }
+                    )) {
+                        Text("Iniciar al encender el Mac")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(textColor)
+                    }
+                    .toggleStyle(SwitchToggleStyle(tint: accentColor))
+
+                    if let err = launchAtLogin.lastError {
+                        Text("❌ \(err)")
+                            .font(.system(size: 11))
+                            .foregroundColor(redColor)
+                    }
                 }
                 .padding(10)
                 .background(cardColor)

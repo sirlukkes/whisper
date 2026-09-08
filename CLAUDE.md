@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Dictado Whisper** — a macOS voice-dictation utility (Spanish-first). Press a global hotkey, speak, and the transcribed text is pasted at the cursor via simulated `Cmd+V`. 100% on-device / offline.
+**Conetxo Listener** (formerly Dictado Whisper; bundle `com.conetxo.listener`, executable `ConetxoListener`, branding constants in `BrandKit.swift`) — a macOS voice-dictation utility (Spanish-first). Press a global hotkey, speak, and the transcribed text is pasted at the cursor via simulated `Cmd+V`. 100% on-device / offline.
 
 The repo contains a single native Swift implementation in `DictadoSwift/`. The old Python implementation has been removed; legacy troubleshooting notes are archived under `docs/legacy/`.
 
@@ -36,6 +36,7 @@ Tests: `DictadoSwift/tests/run_tests.sh`
 - **HotkeyManager.swift** — global hotkey via Carbon `RegisterEventHotKey` (keycode + modifier bitmask), posts `.globalHotkeyTriggered`.
 - **SettingsManager.swift** — `UserDefaults`-backed settings + keycode↔name mapping. Migrates legacy `"whisper_python"` engine value to `"whisper"` on first run.
 - **SpeechManager.swift** — orchestrates recording and engine dispatch.
+- **LaunchAtLoginManager.swift** — `SMAppService.mainApp` wrapper (register/unregister + `launchedAsLoginItem()` via the `keyAELaunchedAsLogInItem` Apple Event). State is read from the system, never cached in UserDefaults. `build.sh` links `-framework ServiceManagement`.
 - **HistoryManager.swift** — last 50 transcriptions in `UserDefaults`, also appended to `~/Documents/DictadoWhisper_Historial.md`.
 - **ContentView.swift** — SwiftUI settings/history UI.
 - Components communicate via `NotificationCenter` (`.globalHotkeyTriggered`, `.recordingStateChanged`, `.whisperSettingsChanged`, `.hotkeyChanged`, `.themeChanged`).
@@ -47,8 +48,23 @@ Transcribe → copy to clipboard → restore focus to the previously-active app 
 ## Critical macOS constraints
 
 - **Accessibility permission** required for paste (`CGEvent`). Declare in `Info.plist`; grant in System Settings → Privacy & Security → Accessibility.
-- **Gatekeeper quarantine:** the app is ad-hoc signed, so Gatekeeper may block it. Clear with `xattr -rc "/Applications/Dictado Whisper.app"`.
+- **Gatekeeper quarantine:** the app is ad-hoc signed, so Gatekeeper may block it. Clear with `xattr -rc "/Applications/Conetxo Listener.app"`.
 - **Permissions declared in Info.plist:** Microphone and Accessibility — macOS fails silently if keys are missing.
+
+## Topology
+
+- Repo: `github.com/sirlukkes/whisper`, branch `main`, direct-to-main, no PRs. No server; local macOS app (macOS 13+).
+- Installs to `/Applications/Conetxo Listener.app` (ad-hoc signed). Running check: `pgrep -fl ConetxoListener`. Menu-bar only (`LSUIElement`), no Dock icon.
+- Cloud engine calls `api.groq.com` / `api.openai.com` directly; keys from `console.groq.com/keys` / `platform.openai.com/api-keys`, stored per-machine in UserDefaults.
+- Models: Hugging Face `ggerganov/whisper.cpp` → `~/Library/Application Support/DictadoWhisper/models/`.
+
+## Decisions worth knowing before changing things
+
+- **whisper.cpp over WhisperKit** — Intel CPU support. Pinned v1.8.6 (`23ee0350`).
+- **Cloud default = Groq** — same Whisper family (large-v3-turbo), ~9x cheaper than OpenAI, fastest measured (11 s clip → 1.5 s).
+- **`detect_language` stays `false`** — `true` returns zero segments ("no se detectó voz"); `language="auto"` alone detects AND transcribes.
+- **Launch-at-login state lives in the system** (`SMAppService.mainApp.status`), because the user can also toggle it in System Settings; a cached flag would lie. When launched by login the startup popover is suppressed.
+- **Vendored + cmake build**, not SwiftPM/Xcode; static libs → self-contained `.app`.
 
 ## Conventions
 

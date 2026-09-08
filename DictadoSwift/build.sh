@@ -37,7 +37,7 @@ swiftc -o "$MACOS_DIR/ConetxoListener" \
     -O \
     -import-objc-header "$SCRIPT_DIR/whisper-bridging.h" \
     -I "$VENDOR/include" -I "$VENDOR/ggml/include" \
-    -framework Accelerate -framework AVFoundation -lc++ \
+    -framework Accelerate -framework AVFoundation -framework ServiceManagement -lc++ \
     DictadoWhisperApp.swift \
     BrandKit.swift \
     ContentView.swift \
@@ -49,6 +49,7 @@ swiftc -o "$MACOS_DIR/ConetxoListener" \
     CloudEngine.swift \
     AudioRecorder.swift \
     ModelManager.swift \
+    LaunchAtLoginManager.swift \
     $WLIBS
 
 echo "📄 Copiando Info.plist..."

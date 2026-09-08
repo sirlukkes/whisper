@@ -10,7 +10,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ = HotkeyManager.shared
         
         // Crear el Popover que contiene nuestra vista SwiftUI
-        popover.contentSize = NSSize(width: 380, height: 770)
+        popover.contentSize = NSSize(width: 380, height: 820)
         popover.behavior = .transient // Se cierra al hacer clic fuera
         popover.contentViewController = NSHostingController(rootView: ContentView(speechManager: SpeechManager.shared))
         
@@ -28,9 +28,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Escuchar el estado de grabación para cambiar el ícono y color en la barra de menús
         NotificationCenter.default.addObserver(self, selector: #selector(recordingStateChanged), name: .recordingStateChanged, object: nil)
         
-        // Mostrar la ventana automáticamente al abrir por primera vez para guiar al usuario
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            self.showPopover()
+        // Show the panel automatically on a manual launch to guide the user.
+        // When launched as a login item, stay quiet: only the menu-bar icon appears.
+        if !LaunchAtLoginManager.launchedAsLoginItem() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                self.showPopover()
+            }
         }
     }
     
@@ -64,6 +67,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(toggle)
 
         menu.addItem(.separator())
+
+        let launchAtLogin = LaunchAtLoginManager.shared
+        launchAtLogin.refresh()
+        let loginItem = NSMenuItem(title: "Iniciar al encender el Mac",
+                                   action: #selector(toggleLaunchAtLoginFromMenu), keyEquivalent: "")
+        loginItem.target = self
+        loginItem.state = launchAtLogin.isEnabled ? .on : .off
+        menu.addItem(loginItem)
+
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Salir", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         // popUpMenu is deprecated; assigning the menu and re-clicking is the supported path.
@@ -75,6 +88,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() { AboutWindowController.shared.show() }
     @objc private func openFromMenu() { showPopover() }
     @objc private func toggleRecordingFromMenu() { SpeechManager.shared.toggleRecording() }
+    @objc private func toggleLaunchAtLoginFromMenu() {
+        let manager = LaunchAtLoginManager.shared
+        manager.setEnabled(!manager.isEnabled)
+    }
 
     @objc func togglePopover(_ sender: AnyObject?) {
         if popover.isShown {
